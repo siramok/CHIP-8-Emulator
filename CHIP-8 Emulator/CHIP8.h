@@ -2,16 +2,18 @@
 #include <string>
 #include <bitset>
 #include <SDL.h>
-#include <SDL_image.h>
 
 class chip8
 {
 	private:
-		uint8_t		O;
-		uint8_t		X;
-		uint8_t		Y;
-		uint8_t		N;
-		uint8_t		KK;
+		static const int WIDTH = 64;
+		static const int HEIGHT = 32;
+		static const int SCALE = 12;
+		SDL_Window *window;
+		SDL_Renderer *renderer;
+		std::bitset<WIDTH * HEIGHT> display;
+
+		uint8_t		O, X, Y, N, KK;
 		uint16_t	NNN;
 		uint16_t	instruction;
 		uint8_t		memory[4096];
@@ -28,19 +30,20 @@ class chip8
 		bool		key_is_pressed;
 		uint8_t		pixel;
 
-
 	public:
 		chip8();
 		~chip8();
 		void loadGame(std::string);
+		void initializeDisplay();
 		void emulateCycle();
+		void updateScreen(SDL_Renderer *renderer, SDL_Rect background);
 		void setValues();
 		void memtest();
 		void debug();
 
 		bool		drawFlag;
 		uint8_t		key[16];
-		std::bitset<32 * 64> display;
+
 		const uint8_t fontset[80] =
 		{
 			0xF0, 0x90, 0x90, 0x90, 0xF0,		// 0

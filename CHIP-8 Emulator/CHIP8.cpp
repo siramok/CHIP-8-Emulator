@@ -5,6 +5,7 @@
 
 chip8::chip8()
 {
+	initializeDisplay();
 
 	PC = 0x0200;
 	instruction = 0x0000;
@@ -36,7 +37,8 @@ chip8::chip8()
 
 chip8::~chip8()
 {
-	
+	SDL_DestroyRenderer(renderer);
+	SDL_DestroyWindow(window);
 }
 
 void chip8::loadGame(std::string path)
@@ -60,11 +62,36 @@ void chip8::loadGame(std::string path)
 	rom.close();
 }
 
+void chip8::initializeDisplay()
+{
+	//Initialize SDL subsystems
+	if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
+	{
+		std::cout << " SDL error: " << SDL_GetError() << std::endl;
+	}
+
+	//Initialize an SDL window
+	window = SDL_CreateWindow("CHIP-8 Emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH * SCALE, HEIGHT * SCALE, SDL_WINDOW_SHOWN);
+	if (window == nullptr)
+	{
+		std::cout << " SDL error: " << SDL_GetError() << std::endl;
+		SDL_Quit();
+	}
+
+	//Initialize an SDL renderer
+	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+	if (renderer == nullptr)
+	{
+		std::cout << " SDL error: " << SDL_GetError() << std::endl;
+		SDL_DestroyWindow(window);
+		SDL_Quit();
+	}
+}
+
 void chip8::emulateCycle()
 {
 	instruction = memory[PC] << 8 | memory[PC + 1];
 	setValues();
-
 	switch (instruction & 0xF000)
 	{
 		case 0x0000:
@@ -73,6 +100,7 @@ void chip8::emulateCycle()
 				case 0x0000: // CLS - Clear the display
 					std::cout << std::uppercase << std::hex << instruction << ": CLS" << std::endl;
 					display.reset();
+					drawFlag = true;
 					PC += 2;
 					break;
 
@@ -476,6 +504,11 @@ void chip8::emulateCycle()
 		}
 		--sound_timer;
 	}
+	
+}
+
+void chip8::updateScreen(SDL_Renderer *renderer, SDL_Rect background)
+{
 	
 }
 
