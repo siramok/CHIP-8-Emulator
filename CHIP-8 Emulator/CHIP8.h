@@ -32,27 +32,23 @@ class chip8
 		uint16_t	stack[16];
 		int			SP;
 		uint8_t		RND;
-		bool		key_is_pressed;
-
 
 	public:
 		chip8();
 		~chip8();
 		void initializeDisplay();
 		void updateScreen();
-		void updateScreen(SDL_Rect &);
+		void updateScreen(const SDL_Rect &scr);
 		uint8_t blit(uint8_t *, uint8_t, uint8_t, uint8_t);
 		bool setPixel(uint16_t x, uint16_t y);
 		void loadGame(std::string);
 		void emulateCycle();
-		
 		void setValues();
 		void memtest();
 		void debug();
 
-		bool		drawFlag;
-		uint8_t		key[16];
-
+		bool waiting_for_key;
+		uint8_t key[16];
 		const uint8_t fontset[80] =
 		{
 			0xF0, 0x90, 0x90, 0x90, 0xF0,		// 0

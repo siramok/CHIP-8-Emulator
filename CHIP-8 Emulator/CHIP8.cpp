@@ -11,8 +11,6 @@ chip8::chip8()
 	instruction = 0x0000;
 	I = 0x0000;
 	SP = 0;
-	
-	display.reset();
 
 	for (int i = 0; i < 16; i++)
 	{
@@ -33,6 +31,7 @@ chip8::chip8()
 
 	delay_timer = 0x00;
 	sound_timer = 0x00;
+	waiting_for_key = false;
 }
 
 chip8::~chip8()
@@ -70,11 +69,13 @@ void chip8::initializeDisplay()
 	screen.y = 0;
 	screen.w = WIDTH;
 	screen.h = HEIGHT;
+
+	display.reset();
 }
 
 void chip8::loadGame(std::string path)
 {
-	char * buffer;
+	char *buffer;
 	std::ifstream rom;
 	rom.open(path, std::ios::binary | std::ios::ate);
 	if (rom.is_open())
@@ -100,8 +101,9 @@ void chip8::updateScreen()
 	updateScreen(screen);
 }
 
-void chip8::updateScreen(SDL_Rect &scr)
+void chip8::updateScreen(const SDL_Rect &scr)
 {
+	SDL_SetRenderDrawColor(renderer, 53, 53, 53, 255);
 	SDL_Rect rect;
 	rect.x = scr.x * SCALE;
 	rect.y = scr.y * SCALE;
@@ -113,7 +115,7 @@ void chip8::updateScreen(SDL_Rect &scr)
 	for (int i = 0; i < scr.w * scr.h; i++)
 	{
 		uint16_t x_pos = scr.x + (i % scr.w);
-		uint16_t y_pos = scr.y + (i / scr.w) * HEIGHT;
+		uint16_t y_pos = scr.y + (i / scr.w) * WIDTH;
 		if (display[x_pos + y_pos])
 		{
 			SDL_Rect pixel;
@@ -471,16 +473,7 @@ void chip8::emulateCycle()
 				case 0x000A: // LD Vx, K - Wait for a key press, store the value of the key in Vx
 					// All execution stops until a key is pressed, then the value of that key is stored in Vx.
 					std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << " K" << std::endl;
-					while (key_is_pressed == false)
-					{
-						for (int i = 0; i < 16; i++)
-						{
-							if (key[i] == 0x01)
-							{
-								key_is_pressed = true;
-							}
-						}
-					}
+					waiting_for_key = true;
 					PC += 2;
 					break;
 
