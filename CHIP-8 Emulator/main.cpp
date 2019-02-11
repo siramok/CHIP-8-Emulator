@@ -6,6 +6,11 @@
 #include "CHIP8.h"
 namespace fs = std::filesystem;
 
+void initializeKeys()
+{
+
+}
+
 int main(int argc, char **argv[])
 {
 	fs::path dir = fs::current_path();
@@ -36,13 +41,6 @@ int main(int argc, char **argv[])
 	bool run = true;
 	while (run)
 	{
-		cpu.emulateCycle();
-
-		if (cpu.drawFlag)
-		{
-			cpu.drawFlag = false;
-		}
-
 		if (SDL_PollEvent(&event))
 		{
 			if (event.type == SDL_QUIT)
@@ -50,6 +48,7 @@ int main(int argc, char **argv[])
 				run = false;
 			}
 		}
+		cpu.emulateCycle();
 	}
 
 	return 0;

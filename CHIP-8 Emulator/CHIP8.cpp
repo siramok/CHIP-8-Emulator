@@ -41,27 +41,6 @@ chip8::~chip8()
 	SDL_DestroyWindow(window);
 }
 
-void chip8::loadGame(std::string path)
-{
-	char * buffer;
-	std::ifstream rom;
-	rom.open(path, std::ios::binary | std::ios::ate);
-	if (rom.is_open())
-	{
-		std::filebuf * pbuf = rom.rdbuf();
-		std::streamsize size = pbuf->pubseekoff(0, rom.end);
-		pbuf->pubseekoff(0, rom.beg);
-		buffer = new char[size];
-		pbuf->sgetn(buffer, size);
-		for (int i = 0; i < size; i++)
-		{
-			memory[0x0200 + i] = buffer[i];
-		}
-		delete buffer;
-	}
-	rom.close();
-}
-
 void chip8::initializeDisplay()
 {
 	//Initialize SDL subsystems
@@ -86,6 +65,107 @@ void chip8::initializeDisplay()
 		SDL_DestroyWindow(window);
 		SDL_Quit();
 	}
+
+	screen.x = 0;
+	screen.y = 0;
+	screen.w = WIDTH;
+	screen.h = HEIGHT;
+}
+
+void chip8::loadGame(std::string path)
+{
+	char * buffer;
+	std::ifstream rom;
+	rom.open(path, std::ios::binary | std::ios::ate);
+	if (rom.is_open())
+	{
+		std::filebuf * pbuf = rom.rdbuf();
+		std::streamsize size = pbuf->pubseekoff(0, rom.end);
+		pbuf->pubseekoff(0, rom.beg);
+		buffer = new char[size];
+		pbuf->sgetn(buffer, size);
+		for (int i = 0; i < size; i++)
+		{
+			memory[0x0200 + i] = buffer[i];
+		}
+		delete buffer;
+	}
+	rom.close();
+}
+
+void chip8::updateScreen()
+{
+	SDL_SetRenderDrawColor(renderer, 53, 53, 53, 255); //Background color
+	SDL_RenderClear(renderer);
+	updateScreen(screen);
+}
+
+void chip8::updateScreen(SDL_Rect &scr)
+{
+	SDL_Rect rect;
+	rect.x = scr.x * SCALE;
+	rect.y = scr.y * SCALE;
+	rect.w = scr.w * SCALE;
+	rect.h = scr.h * SCALE;
+	SDL_RenderFillRect(renderer, &rect);
+
+	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 200); //Pixel Color
+	for (int i = 0; i < scr.w * scr.h; i++)
+	{
+		uint16_t x_pos = scr.x + (i % scr.w);
+		uint16_t y_pos = scr.y + (i / scr.w) * HEIGHT;
+		if (display[x_pos + y_pos])
+		{
+			SDL_Rect pixel;
+			pixel.x = (scr.x * SCALE) + (i % scr.w) * SCALE;
+			pixel.y = (scr.y * SCALE) + (i / scr.w) * SCALE;
+			pixel.w = SCALE;
+			pixel.h = SCALE;
+			SDL_RenderFillRect(renderer, &pixel);
+		}
+	}
+	SDL_RenderPresent(renderer);
+}
+
+uint8_t chip8::blit(uint8_t *temp, uint8_t size, uint8_t x, uint8_t y)
+{
+	bool clear = false;
+	for (int j = 0; j < size; j++)
+	{
+		auto pixels = temp[j];
+		for (int i = 0; i < 8; i++)
+		{
+			if (pixels & 0x80)
+			{
+				clear = setPixel(x + i, y + j) || clear;
+			}
+			pixels = pixels << 1;
+		}
+	}
+	updateScreen();
+	return clear;
+}
+
+bool chip8::setPixel(uint16_t x, uint16_t y)
+{
+	while (x > WIDTH - 1)
+	{
+		x -= WIDTH;
+	}
+	while (x < 0)
+	{
+		x += WIDTH;
+	}
+	while (y > HEIGHT - 1)
+	{
+		y -= HEIGHT;
+	}
+	while (y < 0)
+	{
+		y += HEIGHT;
+	}
+	display.flip(y * WIDTH + x);
+	return !display[y * WIDTH + x];
 }
 
 void chip8::emulateCycle()
@@ -94,247 +174,247 @@ void chip8::emulateCycle()
 	setValues();
 	switch (instruction & 0xF000)
 	{
-		case 0x0000:
-			switch (instruction & 0x000F)
+	case 0x0000:
+		switch (instruction & 0x000F)
+		{
+		case 0x0000: // CLS - Clear the display
+			std::cout << std::uppercase << std::hex << instruction << ": CLS" << std::endl;
+			display.reset();
+			updateScreen();
+			PC += 2;
+			break;
+
+		case 0x000E: // RET - Return from a subroutine
+			// The interpreter sets the program counter to the address at the top of the stack,
+			// then subtracts 1 from the stack pointer.
+			std::cout << std::uppercase << std::hex << "00" << instruction << ": RET" << std::endl;
+			PC = stack[--SP];
+			PC += 2;
+			break;
+
+		default:
+			std::cout << std::uppercase << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
+			break;
+		}
+		break;
+
+	case 0x1000: // JP addr - Jump to location nnn
+		// The interpreter sets the program counter to nnn.
+		std::cout << std::uppercase << std::hex << instruction << ": JP " << unsigned(NNN) << std::endl;
+		PC = NNN;
+		break;
+
+	case 0x2000: // CALL addr - Call subroutine at nnn
+		// The interpreter increments the stack pointer,
+		// then puts the current PC on the top of the stack. The PC is then set to nnn.
+		std::cout << std::uppercase << std::hex << instruction << ": CALL " << unsigned(NNN) << std::endl;
+		stack[SP] = PC;
+		++SP;
+		PC = NNN;
+		break;
+
+	case 0x3000: // SE Vx, byte - Skip next instruction if Vx == kk
+		// The interpreter compares register Vx to kk, and if they are equal,
+		// increments the program counter by 2.
+		std::cout << std::uppercase << std::hex << instruction << ": SE V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
+		if (V[X] == KK)
+		{
+			PC += 2;
+		}
+		PC += 2;
+		break;
+
+	case 0x4000: // SNE Vx, byte - Skip next instruction if Vx != kk
+		// The interpreter compares register Vx to kk, and if they are not equal,
+		// increments the program counter by 2.
+		std::cout << std::uppercase << std::hex << instruction << ": SNE V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
+		if (V[X] != KK)
+		{
+			PC += 2;
+		}
+		PC += 2;
+		break;
+
+	case 0x5000: // SE Vx, Vy - Skip next instruction if Vx == Vy
+		// The interpreter compares register Vx to register Vy,
+		// and if they are equal, increments the program counter by 2.
+		std::cout << std::uppercase << std::hex << instruction << ": SE V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+		if (V[X] == V[Y])
+		{
+			PC += 2;
+		}
+		PC += 2;
+		break;
+
+	case 0x6000: // LD Vx, byte - Set Vx = kk
+		// The interpreter puts the value kk into register Vx.
+		std::cout << std::uppercase << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
+		V[X] = KK;
+		PC += 2;
+		break;
+
+	case 0x7000: // ADD Vx, byte - Set Vx += kk
+		// Adds the value kk to the value of register Vx, then stores the result in Vx.
+		std::cout << std::uppercase << std::hex << instruction << ": ADD V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
+		V[X] += KK;
+		PC += 2;
+		break;
+
+	case 0x8000:
+		switch (instruction & 0x000F)
+		{
+		case 0x0000: // LD Vx, Vy - Set Vx = Vy
+			// Stores the value of register Vy in register Vx.
+			std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			V[X] = V[Y];
+			PC += 2;
+			break;
+
+		case 0x0001: // OR Vx, Vy - Set Vx = Vx OR Vy
+			// Performs a bitwise OR on the values of Vx and Vy, then stores the result in Vx.
+			// A bitwise OR compares the corrseponding bits from two values,
+			// and if either bit is 1, then the same bit in the result is also 1. Otherwise, it is 0.
+			std::cout << std::uppercase << std::hex << instruction << ": OR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			V[X] = (V[X] | V[Y]);
+			PC += 2;
+			break;
+
+		case 0x0002: // AND Vx, Vy - Set Vx = Vx AND Vy
+			// Performs a bitwise AND on the values of Vx and Vy, then stores the result in Vx.
+			std::cout << std::uppercase << std::hex << instruction << ": AND V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			V[X] = (V[X] & V[Y]);
+			PC += 2;
+			break;
+
+		case 0x0003: // XOR Vx, Vy - Set Vx = Vx XOR Vy
+			// Performs a bitwise exclusive OR on the values of Vx and Vy, then stores the result in Vx.
+			std::cout << std::uppercase << std::hex << instruction << ": XOR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			V[X] = (V[X] ^ V[Y]);
+			PC += 2;
+			break;
+
+		case 0x0004: // ADD Vx, Vy - Set Vx = Vx + Vy, set VF = carry
+			// The values of Vx and Vy are added together.
+			// If the result is greater than 8 bits (i.e., > 255,) VF is set to 1,
+			// otherwise 0. Only the lowest 8 bits of the result are kept, and stored in Vx.
+			std::cout << std::uppercase << std::hex << instruction << ": ADD V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			if ((V[X] + V[Y]) > 0xFF)
 			{
-				case 0x0000: // CLS - Clear the display
-					std::cout << std::uppercase << std::hex << instruction << ": CLS" << std::endl;
-					display.reset();
-					drawFlag = true;
-					PC += 2;
-					break;
-
-				case 0x000E: // RET - Return from a subroutine
-					// The interpreter sets the program counter to the address at the top of the stack,
-					// then subtracts 1 from the stack pointer.
-					std::cout << std::uppercase << std::hex << "00" << instruction << ": RET" << std::endl;
-					PC = stack[--SP];
-					PC += 2;
-					break;
-
-				default:
-					std::cout << std::uppercase << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
-					break;
+				V[0xF] = 0x01;
 			}
-			break;
-
-		case 0x1000: // JP addr - Jump to location nnn
-			// The interpreter sets the program counter to nnn.
-			std::cout << std::uppercase << std::hex << instruction << ": JP " << unsigned(NNN) << std::endl;
-			PC = NNN;
-			break;
-
-		case 0x2000: // CALL addr - Call subroutine at nnn
-			// The interpreter increments the stack pointer,
-			// then puts the current PC on the top of the stack. The PC is then set to nnn.
-			std::cout << std::uppercase << std::hex << instruction << ": CALL " << unsigned(NNN) << std::endl;
-			stack[SP] = PC;
-			++SP;
-			PC = NNN;
-			break;
-
-		case 0x3000: // SE Vx, byte - Skip next instruction if Vx == kk
-			// The interpreter compares register Vx to kk, and if they are equal,
-			// increments the program counter by 2.
-			std::cout << std::uppercase << std::hex << instruction << ": SE V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
-			if (V[X] == KK)
+			else
 			{
-				PC += 2;
+				V[0xF] = 0x00;
 			}
+			V[X] += V[Y];
 			PC += 2;
 			break;
 
-		case 0x4000: // SNE Vx, byte - Skip next instruction if Vx != kk
-			// The interpreter compares register Vx to kk, and if they are not equal,
-			// increments the program counter by 2.
-			std::cout << std::uppercase << std::hex << instruction << ": SNE V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
-			if (V[X] != KK)
+		case 0x0005: // SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow
+			// If Vx > Vy, then VF is set to 1, otherwise 0.
+			// Then Vy is subtracted from Vx, and the results stored in Vx.
+			std::cout << std::uppercase << std::hex << instruction << ": SUB V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			if (V[X] > V[Y])
 			{
-				PC += 2;
+				V[0xF] = 0x01;
 			}
-			PC += 2;
-			break;
-
-		case 0x5000: // SE Vx, Vy - Skip next instruction if Vx == Vy
-			// The interpreter compares register Vx to register Vy,
-			// and if they are equal, increments the program counter by 2.
-			std::cout << std::uppercase << std::hex << instruction << ": SE V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-			if (V[X] == V[Y])
+			else
 			{
-				PC += 2;
+				V[0xF] = 0x00;
 			}
+			V[X] -= V[Y];
 			PC += 2;
 			break;
 
-		case 0x6000: // LD Vx, byte - Set Vx = kk
-			// The interpreter puts the value kk into register Vx.
-			std::cout << std::uppercase << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
-			V[X] = KK;
-			PC += 2;
-			break;
-
-		case 0x7000: // ADD Vx, byte - Set Vx += kk
-			// Adds the value kk to the value of register Vx, then stores the result in Vx.
-			std::cout << std::uppercase << std::hex << instruction << ": ADD V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
-			V[X] += KK;
-			PC += 2;
-			break;
-
-		case 0x8000:
-			switch (instruction & 0x000F)
+		case 0x0006: // SHR Vx, Vy - Set Vx = Vx SHR 1
+			// If the least-significant bit of Vx is 1, then VF is set to 1, otherwise 0.
+			// Then Vx is divided by 2.
+			std::cout << std::uppercase << std::hex << instruction << ": SHR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			if ((V[X] & 0x0001) == 0x0001)
 			{
-			case 0x0000: // LD Vx, Vy - Set Vx = Vy
-				// Stores the value of register Vy in register Vx.
-				std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				V[X] = V[Y];
-				PC += 2;
-				break;
-
-			case 0x0001: // OR Vx, Vy - Set Vx = Vx OR Vy
-				// Performs a bitwise OR on the values of Vx and Vy, then stores the result in Vx.
-				// A bitwise OR compares the corrseponding bits from two values,
-				// and if either bit is 1, then the same bit in the result is also 1. Otherwise, it is 0.
-				std::cout << std::uppercase << std::hex << instruction << ": OR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				V[X] = (V[X] | V[Y]);
-				PC += 2;
-				break;
-
-			case 0x0002: // AND Vx, Vy - Set Vx = Vx AND Vy
-				// Performs a bitwise AND on the values of Vx and Vy, then stores the result in Vx.
-				std::cout << std::uppercase << std::hex << instruction << ": AND V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				V[X] = (V[X] & V[Y]);
-				PC += 2;
-				break;
-
-			case 0x0003: // XOR Vx, Vy - Set Vx = Vx XOR Vy
-				// Performs a bitwise exclusive OR on the values of Vx and Vy, then stores the result in Vx.
-				std::cout << std::uppercase << std::hex << instruction << ": XOR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				V[X] = (V[X] ^ V[Y]);
-				PC += 2;
-				break;
-
-			case 0x0004: // ADD Vx, Vy - Set Vx = Vx + Vy, set VF = carry
-				// The values of Vx and Vy are added together.
-				// If the result is greater than 8 bits (i.e., > 255,) VF is set to 1,
-				// otherwise 0. Only the lowest 8 bits of the result are kept, and stored in Vx.
-				std::cout << std::uppercase << std::hex << instruction << ": ADD V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				if ((V[X] + V[Y]) > 0xFF)
-				{
-					V[0xF] = 0x01;
-				}
-				else
-				{
-					V[0xF] = 0x00;
-				}
-				V[X] += V[Y];
-				PC += 2;
-				break;
-
-			case 0x0005: // SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow
-				// If Vx > Vy, then VF is set to 1, otherwise 0.
-				// Then Vy is subtracted from Vx, and the results stored in Vx.
-				std::cout << std::uppercase << std::hex << instruction << ": SUB V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				if (V[X] > V[Y])
-				{
-					V[0xF] = 0x01;
-				}
-				else
-				{
-					V[0xF] = 0x00;
-				}
-				V[X] -= V[Y];
-				PC += 2;
-				break;
-
-			case 0x0006: // SHR Vx, Vy - Set Vx = Vx SHR 1
-				// If the least-significant bit of Vx is 1, then VF is set to 1, otherwise 0.
-				// Then Vx is divided by 2.
-				std::cout << std::uppercase << std::hex << instruction << ": SHR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				if ((V[X] & 0x0001) == 0x0001)
-				{
-					V[0xF] = 0x01;
-				}
-				else
-				{
-					V[0xF] = 0x00;
-				}
-				V[X] /= 2;
-				PC += 2;
-				break;
-
-			case 0x0007: // SUBN Vx, Vy - Set Vx = Vy - Vx, set VF = NOT borrow
-				// If Vy > Vx, then VF is set to 1, otherwise 0.
-				// Then Vx is subtracted from Vy, and the results stored in Vx.
-				std::cout << std::uppercase << std::hex << instruction << ": SUBN V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				if (V[Y] > V[X])
-				{
-					V[0xF] = 0x01;
-				}
-				else
-				{
-					V[0xF] = 0x00;
-				}
-				V[X] = V[Y] - V[X];
-				PC += 2;
-				break;
-
-			case 0x000E: // SHL Vx, Vy - Set Vx = Vx SHL 1
-				// If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to 0.
-				// Then Vx is multiplied by 2.
-				std::cout << std::uppercase << std::hex << instruction << ": SHL V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-				if ((V[X] & 0x0001) == 0x0001)
-				{
-					V[0xF] = 0x01;
-				}
-				else
-				{
-					V[0xF] = 0x00;
-				}
-				V[X] *= 2;
-				PC += 2;
-				break;
-
-			default:
-				std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
-				break;
+				V[0xF] = 0x01;
 			}
-			break;
-
-		case 0x9000: // SNE Vx, Vy - Skip next instruction if Vx != Vy
-			// The values of Vx and Vy are compared, and if they are not equal,
-			// the program counter is increased by 2.
-			std::cout << std::uppercase << std::hex << instruction << ": SNE V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-			if (V[X] != V[Y])
+			else
 			{
-				PC += 2;
+				V[0xF] = 0x00;
 			}
+			V[X] /= 2;
 			PC += 2;
 			break;
 
-		case 0xA000: // LD I, addr - Set I = nnn
-			// The value of register I is set to nnn.
-			std::cout << std::uppercase << std::hex << instruction << ": LD I, " << unsigned(NNN) << std::endl;
-			I = NNN;
+		case 0x0007: // SUBN Vx, Vy - Set Vx = Vy - Vx, set VF = NOT borrow
+			// If Vy > Vx, then VF is set to 1, otherwise 0.
+			// Then Vx is subtracted from Vy, and the results stored in Vx.
+			std::cout << std::uppercase << std::hex << instruction << ": SUBN V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			if (V[Y] > V[X])
+			{
+				V[0xF] = 0x01;
+			}
+			else
+			{
+				V[0xF] = 0x00;
+			}
+			V[X] = V[Y] - V[X];
 			PC += 2;
 			break;
 
-		case 0xB000: // JP V0, addr - Jump to location nnn + V0
-			// The program counter is set to nnn plus the value of V0.
-			std::cout << std::uppercase << std::hex << instruction << ": JP V0, " << unsigned(NNN) << std::endl;
-			PC = NNN + V[0];
-			break;
-
-		case 0xC000: // RND Vx, byte - Set Vx = random byte AND kk
-			// The interpreter generates a random number from 0 to 255,
-			// which is then ANDed with the value kk. The results are stored in Vx.
-			std::cout << std::uppercase << std::hex << instruction << ": RND V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
-			RND = std::rand() % 256;
-			V[X] = KK & RND;
+		case 0x000E: // SHL Vx, Vy - Set Vx = Vx SHL 1
+			// If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to 0.
+			// Then Vx is multiplied by 2.
+			std::cout << std::uppercase << std::hex << instruction << ": SHL V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+			if ((V[X] & 0x0001) == 0x0001)
+			{
+				V[0xF] = 0x01;
+			}
+			else
+			{
+				V[0xF] = 0x00;
+			}
+			V[X] *= 2;
 			PC += 2;
 			break;
 
-		case 0xD000: // DRW Vx, Vy, n - Display n-byte sprite starting at memory location I at (Vx, Vy),
-					 // set VF = collision
+		default:
+			std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
+			break;
+		}
+		break;
+
+	case 0x9000: // SNE Vx, Vy - Skip next instruction if Vx != Vy
+		// The values of Vx and Vy are compared, and if they are not equal,
+		// the program counter is increased by 2.
+		std::cout << std::uppercase << std::hex << instruction << ": SNE V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
+		if (V[X] != V[Y])
+		{
+			PC += 2;
+		}
+		PC += 2;
+		break;
+
+	case 0xA000: // LD I, addr - Set I = nnn
+		// The value of register I is set to nnn.
+		std::cout << std::uppercase << std::hex << instruction << ": LD I, " << unsigned(NNN) << std::endl;
+		I = NNN;
+		PC += 2;
+		break;
+
+	case 0xB000: // JP V0, addr - Jump to location nnn + V0
+		// The program counter is set to nnn plus the value of V0.
+		std::cout << std::uppercase << std::hex << instruction << ": JP V0, " << unsigned(NNN) << std::endl;
+		PC = NNN + V[0];
+		break;
+
+	case 0xC000: // RND Vx, byte - Set Vx = random byte AND kk
+		// The interpreter generates a random number from 0 to 255,
+		// which is then ANDed with the value kk. The results are stored in Vx.
+		std::cout << std::uppercase << std::hex << instruction << ": RND V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
+		RND = std::rand() % 256;
+		V[X] = KK & RND;
+		PC += 2;
+		break;
+
+	case 0xD000: // DRW Vx, Vy, n - Display n-byte sprite starting at memory location I at (Vx, Vy),
+				 // set VF = collision
 			// The interpreter reads n bytes from memory, starting at the address stored in I.
 			// These bytes are then displayed as sprites on screen at coordinates (Vx, Vy).
 			// Sprites are XORed onto the existing screen.
@@ -343,24 +423,7 @@ void chip8::emulateCycle()
 			// it wraps around to the opposite side of the screen.
 			// See section 2.4, Display, for more information on the Chip-8 screen and sprites.
 			std::cout << std::uppercase << std::hex << instruction << ": DRW V" << unsigned(X) << ", V" << unsigned(Y) << ", " << unsigned(N) << std::endl;
-			x_coord = V[X];
-			y_coord = V[Y];
-
-			V[0xF] = 0x00;
-			for (int j = 0; j < N; ++j)
-			{
-				for (int i = 0; i < 8; ++i)
-				{
-					if ((memory[I + j] & (0x80 >> i)) != 0)
-					{
-						pixel = ((V[X] + i) + ((V[Y] + j) << 6)) % 2048;
-						V[0xF] |= display[pixel] & 1;
-						display[pixel] = ~display[pixel];
-					}
-				}
-			}
-
-			drawFlag = true;
+			V[0xF] = blit(&memory[I], N, x_coord, y_coord);
 			PC += 2;
 			break;
 
@@ -507,11 +570,6 @@ void chip8::emulateCycle()
 	
 }
 
-void chip8::updateScreen(SDL_Renderer *renderer, SDL_Rect background)
-{
-	
-}
-
 void chip8::setValues()
 {
 	O = (instruction & 0xF000) >> 12;
@@ -520,6 +578,8 @@ void chip8::setValues()
 	N = (instruction & 0x000F);
 	KK = (instruction & 0x00FF);
 	NNN = (instruction & 0x0FFF);
+	x_coord = V[X];
+	y_coord = V[Y];
 }
 
 void chip8::memtest()

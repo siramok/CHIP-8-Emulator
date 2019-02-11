@@ -1,22 +1,29 @@
 #pragma once
 #include <string>
 #include <bitset>
+#include <vector>
 #include <SDL.h>
 
 class chip8
 {
 	private:
-		static const int WIDTH = 64;
-		static const int HEIGHT = 32;
-		static const int SCALE = 12;
+		//Display Stuff
+		static const uint8_t WIDTH = 64;
+		static const uint8_t HEIGHT = 32;
+		static const uint8_t SCALE = 12;
+		SDL_Rect screen;
 		SDL_Window *window;
 		SDL_Renderer *renderer;
 		std::bitset<WIDTH * HEIGHT> display;
+		uint16_t x_coord;
+		uint16_t y_coord;
+		uint8_t	pixel;
 
+		//System Stuff
 		uint8_t		O, X, Y, N, KK;
 		uint16_t	NNN;
 		uint16_t	instruction;
-		uint8_t		memory[4096];
+		uint8_t memory[4096];
 		uint8_t		V[16];
 		uint16_t	I;
 		uint16_t	PC;
@@ -25,18 +32,20 @@ class chip8
 		uint16_t	stack[16];
 		int			SP;
 		uint8_t		RND;
-		uint8_t		x_coord;
-		uint8_t		y_coord;
 		bool		key_is_pressed;
-		uint8_t		pixel;
+
 
 	public:
 		chip8();
 		~chip8();
-		void loadGame(std::string);
 		void initializeDisplay();
+		void updateScreen();
+		void updateScreen(SDL_Rect &);
+		uint8_t blit(uint8_t *, uint8_t, uint8_t, uint8_t);
+		bool setPixel(uint16_t x, uint16_t y);
+		void loadGame(std::string);
 		void emulateCycle();
-		void updateScreen(SDL_Renderer *renderer, SDL_Rect background);
+		
 		void setValues();
 		void memtest();
 		void debug();
