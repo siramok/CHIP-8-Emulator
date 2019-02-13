@@ -24,6 +24,26 @@ chip8::chip8()
 		memory[i] = 0x00;
 	}
 	
+	const uint8_t fontset[80] =
+	{
+		0xF0, 0x90, 0x90, 0x90, 0xF0,		// 0
+		0x20, 0x60, 0x20, 0x20, 0x70,		// 1
+		0xF0, 0x10, 0xF0, 0x80, 0xF0,		// 2
+		0xF0, 0x10, 0xF0, 0x10, 0xF0,		// 3
+		0x90, 0x90, 0xF0, 0x10, 0x10,		// 4
+		0xF0, 0x80, 0xF0, 0x10, 0xF0,		// 5
+		0xF0, 0x80, 0xF0, 0x90, 0xF0,		// 6
+		0xF0, 0x10, 0x20, 0x40, 0x40,		// 7
+		0xF0, 0x90, 0xF0, 0x90, 0xF0,		// 8
+		0xF0, 0x90, 0xF0, 0x10, 0xF0,		// 9
+		0xF0, 0x90, 0xF0, 0x90, 0x90,		// A
+		0xE0, 0x90, 0xE0, 0x90, 0xE0,		// B
+		0xF0, 0x80, 0x80, 0x80, 0xF0,		// C
+		0xE0, 0x90, 0x90, 0x90, 0xE0,		// D
+		0xF0, 0x80, 0xF0, 0x80, 0xF0,		// E
+		0xF0, 0x80, 0xF0, 0x80, 0x80		// F
+	};
+
 	for (int i = 0; i < 80; ++i)
 	{
 		memory[i] = fontset[i];
@@ -31,7 +51,6 @@ chip8::chip8()
 
 	delay_timer = 0x00;
 	sound_timer = 0x00;
-	waiting_for_key = false;
 }
 
 chip8::~chip8()
@@ -170,6 +189,16 @@ bool chip8::setPixel(uint16_t x, uint16_t y)
 	return !display[y * WIDTH + x];
 }
 
+void chip8::setValues()
+{
+	O = (instruction & 0xF000) >> 12;
+	X = (instruction & 0x0F00) >> 8;
+	Y = (instruction & 0x00F0) >> 4;
+	N = (instruction & 0x000F);
+	KK = (instruction & 0x00FF);
+	NNN = (instruction & 0x0FFF);
+}
+
 void chip8::emulateCycle()
 {
 	instruction = memory[PC] << 8 | memory[PC + 1];
@@ -179,7 +208,7 @@ void chip8::emulateCycle()
 	case 0x0000:
 		switch (instruction & 0x000F)
 		{
-		case 0x0000: // CLS - Clear the display
+		case 0x0000: //* CLS - Clear the display
 			std::cout << std::uppercase << std::hex << instruction << ": CLS" << std::endl;
 			display.reset();
 			updateScreen();
@@ -200,8 +229,7 @@ void chip8::emulateCycle()
 		}
 		break;
 
-	case 0x1000: // JP addr - Jump to location nnn
-		// The interpreter sets the program counter to nnn.
+	case 0x1000: //* JP addr - Jump to location nnn
 		std::cout << std::uppercase << std::hex << instruction << ": JP " << unsigned(NNN) << std::endl;
 		PC = NNN;
 		break;
@@ -210,14 +238,11 @@ void chip8::emulateCycle()
 		// The interpreter increments the stack pointer,
 		// then puts the current PC on the top of the stack. The PC is then set to nnn.
 		std::cout << std::uppercase << std::hex << instruction << ": CALL " << unsigned(NNN) << std::endl;
-		stack[SP] = PC;
-		++SP;
+		stack[SP++] = PC;
 		PC = NNN;
 		break;
 
-	case 0x3000: // SE Vx, byte - Skip next instruction if Vx == kk
-		// The interpreter compares register Vx to kk, and if they are equal,
-		// increments the program counter by 2.
+	case 0x3000: //* SE Vx, byte - Skip next instruction if Vx == kk
 		std::cout << std::uppercase << std::hex << instruction << ": SE V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
 		if (V[X] == KK)
 		{
@@ -226,9 +251,7 @@ void chip8::emulateCycle()
 		PC += 2;
 		break;
 
-	case 0x4000: // SNE Vx, byte - Skip next instruction if Vx != kk
-		// The interpreter compares register Vx to kk, and if they are not equal,
-		// increments the program counter by 2.
+	case 0x4000: //* SNE Vx, byte - Skip next instruction if Vx != kk
 		std::cout << std::uppercase << std::hex << instruction << ": SNE V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
 		if (V[X] != KK)
 		{
@@ -237,9 +260,7 @@ void chip8::emulateCycle()
 		PC += 2;
 		break;
 
-	case 0x5000: // SE Vx, Vy - Skip next instruction if Vx == Vy
-		// The interpreter compares register Vx to register Vy,
-		// and if they are equal, increments the program counter by 2.
+	case 0x5000: //* SE Vx, Vy - Skip next instruction if Vx == Vy
 		std::cout << std::uppercase << std::hex << instruction << ": SE V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 		if (V[X] == V[Y])
 		{
@@ -248,15 +269,13 @@ void chip8::emulateCycle()
 		PC += 2;
 		break;
 
-	case 0x6000: // LD Vx, byte - Set Vx = kk
-		// The interpreter puts the value kk into register Vx.
+	case 0x6000: //* LD Vx, byte - Set Vx = kk
 		std::cout << std::uppercase << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
 		V[X] = KK;
 		PC += 2;
 		break;
 
-	case 0x7000: // ADD Vx, byte - Set Vx += kk
-		// Adds the value kk to the value of register Vx, then stores the result in Vx.
+	case 0x7000: //* ADD Vx, byte - Set Vx += kk
 		std::cout << std::uppercase << std::hex << instruction << ": ADD V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
 		V[X] += KK;
 		PC += 2;
@@ -265,42 +284,34 @@ void chip8::emulateCycle()
 	case 0x8000:
 		switch (instruction & 0x000F)
 		{
-		case 0x0000: // LD Vx, Vy - Set Vx = Vy
-			// Stores the value of register Vy in register Vx.
+		case 0x0000: //* LD Vx, Vy - Set Vx = Vy
 			std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 			V[X] = V[Y];
 			PC += 2;
 			break;
 
-		case 0x0001: // OR Vx, Vy - Set Vx = Vx OR Vy
-			// Performs a bitwise OR on the values of Vx and Vy, then stores the result in Vx.
-			// A bitwise OR compares the corrseponding bits from two values,
-			// and if either bit is 1, then the same bit in the result is also 1. Otherwise, it is 0.
+		case 0x0001: //* OR Vx, Vy - Set Vx = Vx OR Vy
 			std::cout << std::uppercase << std::hex << instruction << ": OR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 			V[X] = (V[X] | V[Y]);
 			PC += 2;
 			break;
 
-		case 0x0002: // AND Vx, Vy - Set Vx = Vx AND Vy
-			// Performs a bitwise AND on the values of Vx and Vy, then stores the result in Vx.
+		case 0x0002: //* AND Vx, Vy - Set Vx = Vx AND Vy
 			std::cout << std::uppercase << std::hex << instruction << ": AND V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 			V[X] = (V[X] & V[Y]);
 			PC += 2;
 			break;
 
-		case 0x0003: // XOR Vx, Vy - Set Vx = Vx XOR Vy
-			// Performs a bitwise exclusive OR on the values of Vx and Vy, then stores the result in Vx.
+		case 0x0003: //* XOR Vx, Vy - Set Vx = Vx XOR Vy
 			std::cout << std::uppercase << std::hex << instruction << ": XOR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 			V[X] = (V[X] ^ V[Y]);
 			PC += 2;
 			break;
 
-		case 0x0004: // ADD Vx, Vy - Set Vx = Vx + Vy, set VF = carry
-			// The values of Vx and Vy are added together.
-			// If the result is greater than 8 bits (i.e., > 255,) VF is set to 1,
-			// otherwise 0. Only the lowest 8 bits of the result are kept, and stored in Vx.
+		case 0x0004: //* ADD Vx, Vy - Set Vx = Vx + Vy, set VF = carry
 			std::cout << std::uppercase << std::hex << instruction << ": ADD V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-			if ((V[X] + V[Y]) > 0xFF)
+			
+			if (V[X] + V[Y] > 0xFF)
 			{
 				V[0xF] = 0x01;
 			}
@@ -312,9 +323,7 @@ void chip8::emulateCycle()
 			PC += 2;
 			break;
 
-		case 0x0005: // SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow
-			// If Vx > Vy, then VF is set to 1, otherwise 0.
-			// Then Vy is subtracted from Vx, and the results stored in Vx.
+		case 0x0005: //* SUB Vx, Vy - Set Vx = Vx - Vy, set VF = NOT borrow
 			std::cout << std::uppercase << std::hex << instruction << ": SUB V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 			if (V[X] > V[Y])
 			{
@@ -328,11 +337,9 @@ void chip8::emulateCycle()
 			PC += 2;
 			break;
 
-		case 0x0006: // SHR Vx, Vy - Set Vx = Vx SHR 1
-			// If the least-significant bit of Vx is 1, then VF is set to 1, otherwise 0.
-			// Then Vx is divided by 2.
+		case 0x0006: //* SHR Vx, Vy - Set Vx = Vx SHR 1
 			std::cout << std::uppercase << std::hex << instruction << ": SHR V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-			if ((V[X] & 0x0001) == 0x0001)
+			if (V[X] & 0x01)
 			{
 				V[0xF] = 0x01;
 			}
@@ -344,9 +351,7 @@ void chip8::emulateCycle()
 			PC += 2;
 			break;
 
-		case 0x0007: // SUBN Vx, Vy - Set Vx = Vy - Vx, set VF = NOT borrow
-			// If Vy > Vx, then VF is set to 1, otherwise 0.
-			// Then Vx is subtracted from Vy, and the results stored in Vx.
+		case 0x0007: //* SUBN Vx, Vy - Set Vx = Vy - Vx, set VF = NOT borrow
 			std::cout << std::uppercase << std::hex << instruction << ": SUBN V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 			if (V[Y] > V[X])
 			{
@@ -360,11 +365,9 @@ void chip8::emulateCycle()
 			PC += 2;
 			break;
 
-		case 0x000E: // SHL Vx, Vy - Set Vx = Vx SHL 1
-			// If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to 0.
-			// Then Vx is multiplied by 2.
+		case 0x000E: //* SHL Vx, Vy - Set Vx = Vx SHL 1
 			std::cout << std::uppercase << std::hex << instruction << ": SHL V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
-			if ((V[X] & 0x0001) == 0x0001)
+			if (V[X] & 0x0001)
 			{
 				V[0xF] = 0x01;
 			}
@@ -382,9 +385,7 @@ void chip8::emulateCycle()
 		}
 		break;
 
-	case 0x9000: // SNE Vx, Vy - Skip next instruction if Vx != Vy
-		// The values of Vx and Vy are compared, and if they are not equal,
-		// the program counter is increased by 2.
+	case 0x9000: //* SNE Vx, Vy - Skip next instruction if Vx != Vy
 		std::cout << std::uppercase << std::hex << instruction << ": SNE V" << unsigned(X) << ", V" << unsigned(Y) << std::endl;
 		if (V[X] != V[Y])
 		{
@@ -393,63 +394,122 @@ void chip8::emulateCycle()
 		PC += 2;
 		break;
 
-	case 0xA000: // LD I, addr - Set I = nnn
-		// The value of register I is set to nnn.
+	case 0xA000: //* LD I, addr - Set I = nnn
 		std::cout << std::uppercase << std::hex << instruction << ": LD I, " << unsigned(NNN) << std::endl;
 		I = NNN;
 		PC += 2;
 		break;
 
-	case 0xB000: // JP V0, addr - Jump to location nnn + V0
-		// The program counter is set to nnn plus the value of V0.
+	case 0xB000: //* JP V0, addr - Jump to location nnn + V0
 		std::cout << std::uppercase << std::hex << instruction << ": JP V0, " << unsigned(NNN) << std::endl;
-		PC = NNN + V[0];
+		PC = (NNN + V[0]);
 		break;
 
-	case 0xC000: // RND Vx, byte - Set Vx = random byte AND kk
-		// The interpreter generates a random number from 0 to 255,
-		// which is then ANDed with the value kk. The results are stored in Vx.
+	case 0xC000: //* RND Vx, byte - Set Vx = random byte AND kk
 		std::cout << std::uppercase << std::hex << instruction << ": RND V" << unsigned(X) << ", " << unsigned(KK) << std::endl;
-		RND = std::rand() % 256;
-		V[X] = KK & RND;
+		V[X] = (std::rand() % 256) & KK;
 		PC += 2;
 		break;
 
-	case 0xD000: // DRW Vx, Vy, n - Display n-byte sprite starting at memory location I at (Vx, Vy),
-				 // set VF = collision
-			// The interpreter reads n bytes from memory, starting at the address stored in I.
-			// These bytes are then displayed as sprites on screen at coordinates (Vx, Vy).
-			// Sprites are XORed onto the existing screen.
-			// If this causes any pixels to be erased, VF is set to 1, otherwise it is set to 0.
-			// If the sprite is positioned so part of it is outside the coordinates of the display,
-			// it wraps around to the opposite side of the screen.
-			// See section 2.4, Display, for more information on the Chip-8 screen and sprites.
-			std::cout << std::uppercase << std::hex << instruction << ": DRW V" << unsigned(X) << ", V" << unsigned(Y) << ", " << unsigned(N) << std::endl;
-			V[0xF] = blit(&memory[I], N, x_coord, y_coord);
+	case 0xD000: //* DRW Vx, Vy, n - Display n-byte sprite starting at memory location I at (Vx, Vy),
+		std::cout << std::uppercase << std::hex << instruction << ": DRW V" << unsigned(X) << ", V" << unsigned(Y) << ", " << unsigned(N) << std::endl;
+		V[0xF] = blit(&memory[I], N, V[X], V[Y]);
+		PC += 2;
+		break;
+
+	case 0xE000:
+		switch (instruction & 0x00FF)
+		{
+		case 0x009E: //* SKP Vx - Skip next instruction if key with the value Vx is pressed
+			std::cout << std::uppercase << std::hex << instruction << ": SKP V" << unsigned(X) << std::endl;
+			if (key[V[X]] != 0x00)
+			{
+				PC += 2;
+			}
 			PC += 2;
 			break;
 
-		case 0xE000:
-			switch (instruction & 0x000F)
+		case 0x00A1: //* SKNP Vx - Skip next instruction if key with the value Vx is not pressed
+			std::cout << std::uppercase << std::hex << instruction << ": SKNP V" << unsigned(X) << std::endl;
+			if (key[V[X]] == 0x00)
 			{
-			case 0x000E: // SKP Vx - Skip next instruction if key with the value Vx is pressed
-				// Checks the keyboard, and if the key corresponding to the value
-				// of Vx is currently in the down position, PC is increased by 2.
-				std::cout << std::uppercase << std::hex << instruction << ": SKP V" << unsigned(X) << std::endl;
-				if (key[V[X]] == 0x01)
+				PC += 2;
+			}
+			PC += 2;
+			break;
+
+		default:
+			std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
+			break;
+		}
+		break;
+
+	case 0xF000:
+		switch(instruction & 0x00FF)
+		{
+			case 0x0007: //* LD Vx, DT - Set Vx = delay timer value
+				std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", " << unsigned(delay_timer) << std::endl;
+				V[X] = delay_timer;
+				PC += 2;
+				break;
+
+			case 0x000A: // LD Vx, K - Wait for a key press, store the value of the key in Vx
+				// All execution stops until a key is pressed, then the value of that key is stored in Vx.
+				// For later: make a function that loops and returns the value of the key being pressed
+				std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << " K" << std::endl;
+				V[X] = waitForKey();
+				PC += 2;
+				break;
+
+			case 0x0015: //* LD DT, Vx - Set delay timer = Vx
+				std::cout << std::uppercase << std::hex << instruction << ": LD " << unsigned(delay_timer) << ", V" << unsigned(X) << std::endl;
+				delay_timer = V[X];
+				PC += 2;
+				break;
+
+			case 0x0018: //* LD ST, Vx - Set sound timer = Vx
+				std::cout << std::uppercase << std::hex << instruction << ": LD "  << unsigned(sound_timer) << ", V"  << unsigned(X) << std::endl;
+				sound_timer = V[X];
+				PC += 2;
+				break;
+
+			case 0x001E: //* ADD I, Vx - Set I = I + Vx
+				std::cout << std::uppercase << std::hex << instruction << ": ADD I, V" << unsigned(X) << std::endl;
+				I += V[X];
+				PC += 2;
+				break;
+
+			case 0x0029: //* LD F, Vx - Set I = location of sprite for digit Vx
+				std::cout << std::uppercase << std::hex << instruction << ": LD F, V" << unsigned(X) << std::endl;
+				I = V[X] * 0x05;
+				PC += 2;
+				break;
+
+			case 0x0033: // LD B, Vx - Store BCD representation of Vx in memory locations I, I+1, and I+2
+				// The interpreter takes the decimal value of Vx, and places the hundreds digit in memory
+				// at location in I, the tens digit at location I+1, and the ones digit at location I+2.
+				std::cout << std::uppercase << std::hex << instruction << ": LD B, V" << unsigned(X) << std::endl;
+				memory[I] = V[X] / 100;
+				memory[I + 1] = (V[X] / 10) % 10;
+				memory[I + 2] = (V[X] % 100) % 10;
+				PC += 2;
+				break;
+
+			case 0x0055: //* LD [I], Vx - Store registers V0 through Vx in memory starting at location I
+				std::cout << std::uppercase << std::hex << instruction << ": LD [I], V" << unsigned(X) << std::endl;
+				for (int i = 0; i <= X; ++i)
 				{
-					PC += 2;
+					memory[I + i] = V[i];
 				}
 				PC += 2;
 				break;
 
-			case 0x0001: // SKNP Vx - Skip next instruction if key with the value Vx is not pressed
-				// Checks the keyboard, and if the key corresponding to the value
-				// of Vx is currently in the up position, PC is increased by 2.
-				std::cout << std::uppercase << std::hex << instruction << ": SKNP V" << unsigned(X) << std::endl;
-				if (key[V[X]] == 0x00)
+			case 0x0065: // LD Vx, [I] - Read registers V0 through Vx from memory starting at location I
+				// The interpreter reads values from memory starting at location I into registers V0 through Vx.
+				std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", [I]" << std::endl;
+				for (int i = 0; i <= X; ++i)
 				{
-					PC += 2;
+					V[i] = memory[I + i];
 				}
 				PC += 2;
 				break;
@@ -457,94 +517,12 @@ void chip8::emulateCycle()
 			default:
 				std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
 				break;
-			}
-			break;
+		}
+		break;
 
-		case 0xF000:
-			switch(instruction & 0x00FF)
-			{
-				case 0x0007: // LD Vx, DT - Set Vx = delay timer value
-					// The value of DT is placed into Vx.
-					std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", " << unsigned(delay_timer) << std::endl;
-					V[X] = delay_timer;
-					PC += 2;
-					break;
-
-				case 0x000A: // LD Vx, K - Wait for a key press, store the value of the key in Vx
-					// All execution stops until a key is pressed, then the value of that key is stored in Vx.
-					std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << " K" << std::endl;
-					waiting_for_key = true;
-					PC += 2;
-					break;
-
-				case 0x0015: // LD DT, Vx - Set delay timer = Vx
-					// DT is set equal to the value of Vx.
-					std::cout << std::uppercase << std::hex << instruction << ": LD " << unsigned(delay_timer) << ", V" << unsigned(X) << std::endl;
-					delay_timer = V[X];
-					PC += 2;
-					break;
-
-				case 0x0018: // LD ST, Vx - Set sound timer = Vx
-					// ST is set equal to the value of Vx.
-					std::cout << std::uppercase << std::hex << instruction << ": LD "  << unsigned(sound_timer) << ", V"  << unsigned(X) << std::endl;
-					sound_timer = V[X];
-					PC += 2;
-					break;
-
-				case 0x001E: // ADD I, Vx - Set I = I + Vx
-					std::cout << std::uppercase << std::hex << instruction << ": ADD I, V" << unsigned(X) << std::endl;
-					I += V[X];
-					PC += 2;
-					break;
-
-				case 0x0029: // LD F, Vx - Set I = location of sprite for digit Vx
-					// The value of I is set to the location for the hexadecimal sprite corresponding
-					// to the value of Vx.
-					// See section 2.4, Display, for more information on the Chip-8 hexadecimal font.
-					std::cout << std::uppercase << std::hex << instruction << ": LD F, V" << unsigned(X) << std::endl;
-					I = V[X] * 5;
-					PC += 2;
-					break;
-
-				case 0x0033: // LD B, Vx - Store BCD representation of Vx in memory locations I, I+1, and I+2
-					// The interpreter takes the decimal value of Vx, and places the hundreds digit in memory
-					// at location in I, the tens digit at location I+1, and the ones digit at location I+2.
-					std::cout << std::uppercase << std::hex << instruction << ": LD B, V" << unsigned(X) << std::endl;
-					memory[I] = V[X] / 100;
-					memory[I + 1] = (V[X] / 10) % 10;
-					memory[I + 2] = (V[X] % 100) / 10;
-					PC += 2;
-					break;
-
-				case 0x0055: // LD [I], Vx - Store registers V0 through Vx in memory starting at location I
-					// The interpreter reads values from registers V0 through Vx into memory starting at location I.
-					std::cout << std::uppercase << std::hex << instruction << ": LD [I], V" << unsigned(X) << std::endl;
-					for (int i = 0; i < X; ++i)
-					{
-						memory[I++] = V[i];
-						I += 1;
-					}
-					break;
-
-				case 0x0065: // LD Vx, [I] - Read registers V0 through Vx from memory starting at location I
-					// The interpreter reads values from memory starting at location I into registers V0 through Vx.
-					std::cout << std::uppercase << std::hex << instruction << ": LD V" << unsigned(X) << ", [I]" << std::endl;
-					for (int i = 0; i < X; ++i)
-					{
-						V[i] = memory[I++];
-					}
-					PC += 2;
-					break;
-
-				default:
-					std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
-					break;
-				}
-			break;
-
-		default:
-			std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
-			break;
+	default:
+		std::cout << "Unknown opcode [" << std::hex << instruction << "]" << std::endl;
+		break;
 	}
 	
 	if (delay_timer > 0)
@@ -563,16 +541,89 @@ void chip8::emulateCycle()
 	
 }
 
-void chip8::setValues()
+uint8_t chip8::waitForKey()
 {
-	O = (instruction & 0xF000) >> 12;
-	X = (instruction & 0x0F00) >> 8;
-	Y = (instruction & 0x00F0) >> 4;
-	N = (instruction & 0x000F);
-	KK = (instruction & 0x00FF);
-	NNN = (instruction & 0x0FFF);
-	x_coord = V[X];
-	y_coord = V[Y];
+	SDL_Event event;
+	while (true)
+	{
+		if (SDL_PollEvent(&event))
+		{
+			switch (event.type)
+			{
+				case SDL_KEYDOWN:
+					switch (event.key.keysym.sym)
+					{
+						case SDLK_x:
+							return 0x00;
+							break;
+
+						case SDLK_1:
+							return 0x01;
+							break;
+
+						case SDLK_2:
+							return 0x02;
+							break;
+
+						case SDLK_3:
+							return 0x03;
+							break;
+
+						case SDLK_q:
+							return 0x04;
+							break;
+
+						case SDLK_w:
+							return 0x05;
+							break;
+
+						case SDLK_e:
+							return 0x06;
+							break;
+
+						case SDLK_a:
+							return 0x07;
+							break;
+
+						case SDLK_s:
+							return 0x08;
+							break;
+
+						case SDLK_d:
+							return 0x09;
+							break;
+
+						case SDLK_z:
+							return 0x0A;
+							break;
+
+						case SDLK_c:
+							return 0x0B;
+							break;
+
+						case SDLK_4:
+							return 0x0C;
+							break;
+
+						case SDLK_r:
+							return 0x0D;
+							break;
+
+						case SDLK_f:
+							return 0x0E;
+							break;
+
+						case SDLK_v:
+							return 0x0F;
+							break;
+
+						default:
+							break;
+					}
+				break;
+			}
+		}
+	}
 }
 
 void chip8::memtest()
